@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""
+paco-next - Ask LLM what task to work on next
+Usage: paco-next <project>
+"""
+
+import sys
+import argparse
+from paco_lib import (
+    init_paco_dirs, 
+    build_context_for_llm, 
+    call_ollama,
+    check_prompt_size
+)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Get LLM recommendation for next task to work on"
+    )
+    parser.add_argument("project", help="Project name")
+    parser.add_argument(
+        "--model",
+        default="llama3.2",
+        help="Ollama model to use (default: llama3.2)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Initialize PACO dirs
+    init_paco_dirs()
+    
+    print(f"🤔 Analyzing '{args.project}'...")
+    
+    # Build context
+    context = build_context_for_llm(args.project)
+    
+    # Check prompt size
+    within_limit, size_kb = check_prompt_size(context)
+    if not within_limit:
+        print(f"⚠ Warning: Context size ({size_kb:.1f}KB) exceeds recommended limit", 
+              file=sys.stderr)
+    
+    # Build prompt
+    system_prompt = """You are PACO, a personal productivity assistant. 
+Your job is to help the user choose the next best task to work on.
+Be practical, concise, and actionable.
+Format your response as:
+
+**Recommended Task:** [task title or description]
+
+**Why:** [brief reason why this is the best next task]
+
+**Three Steps to Start:**
+1. [first concrete action]
+2. [second concrete action]
+3. [third concrete action]
+"""
+    
+    user_prompt = f"""Based on the following project context, recommend 1-2 tasks I should work on next:
+
+{context}
+
+What should I work on now?"""
+    
+    # Call LLM
+    print("💭 Thinking...")
+    response = call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
+    
+    print("\n" + "="*60)
+    print(response)
+    print("="*60)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)

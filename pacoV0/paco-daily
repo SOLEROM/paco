@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""
+paco-daily - Write a note to today's daily log
+Usage: paco-daily <message>
+"""
+
+import sys
+import argparse
+from paco_lib import write_daily_note, init_paco_dirs
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Add a note to today's daily log"
+    )
+    parser.add_argument("message", help="Daily note message")
+    
+    args = parser.parse_args()
+    
+    # Initialize PACO dirs
+    init_paco_dirs()
+    
+    # Write daily note
+    write_daily_note(args.message)
+    
+    print(f"✓ Daily note added")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
