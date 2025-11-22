@@ -6,25 +6,30 @@ Core library with data structures and helper functions
 
 import os
 import json
-import re
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
-import subprocess
 
 # Constants
 PACO_DIR = Path.home() / "paco"
 PROJECTS_DIR = PACO_DIR / "projects"
 DAILY_DIR = PACO_DIR / "daily"
 DAILY_SUMMARIES_DIR = DAILY_DIR / "summaries"
+CONFIG_FILE = PACO_DIR / "config.json"
 
 # Context limits (guardrails)
 MAX_TASKS_IN_CONTEXT = 20
 MAX_LOG_LINES_IN_CONTEXT = 40
 MAX_PROMPT_SIZE_KB = 15
 
-# LLM settings
-DEFAULT_MODEL = "llama3.2"
+# Default settings
+DEFAULT_CONFIG = {
+    "model": "llama3.2",
+    "max_tasks": MAX_TASKS_IN_CONTEXT,
+    "max_log_lines": MAX_LOG_LINES_IN_CONTEXT,
+    "max_prompt_kb": MAX_PROMPT_SIZE_KB
+}
 
 
 def init_paco_dirs():
@@ -33,6 +38,38 @@ def init_paco_dirs():
     PROJECTS_DIR.mkdir(exist_ok=True)
     DAILY_DIR.mkdir(exist_ok=True)
     DAILY_SUMMARIES_DIR.mkdir(exist_ok=True)
+    
+    # Create default config if it doesn't exist
+    if not CONFIG_FILE.exists():
+        save_config(DEFAULT_CONFIG)
+
+
+def load_config() -> Dict:
+    """Load configuration from config file"""
+    if not CONFIG_FILE.exists():
+        return DEFAULT_CONFIG.copy()
+    try:
+        return json.loads(CONFIG_FILE.read_text())
+    except:
+        return DEFAULT_CONFIG.copy()
+
+
+def save_config(config: Dict):
+    """Save configuration to config file"""
+    CONFIG_FILE.write_text(json.dumps(config, indent=2))
+
+
+def get_config_value(key: str, default=None):
+    """Get a single config value"""
+    config = load_config()
+    return config.get(key, default)
+
+
+def set_config_value(key: str, value):
+    """Set a single config value"""
+    config = load_config()
+    config[key] = value
+    save_config(config)
 
 
 def get_project_dir(project_name: str) -> Path:
@@ -46,7 +83,6 @@ def init_project(project_name: str):
     project_dir.mkdir(exist_ok=True)
     (project_dir / "archive").mkdir(exist_ok=True)
     
-    # Create empty files if they don't exist
     tasks_file = project_dir / "tasks.ndjson"
     if not tasks_file.exists():
         tasks_file.touch()
@@ -74,7 +110,7 @@ def list_projects() -> List[str]:
     """List all existing projects"""
     if not PROJECTS_DIR.exists():
         return []
-    return [d.name for d in PROJECTS_DIR.iterdir() if d.is_dir()]
+    return sorted([d.name for d in PROJECTS_DIR.iterdir() if d.is_dir()])
 
 
 def get_next_task_id(project_name: str) -> int:
@@ -159,8 +195,11 @@ def append_to_log(project_name: str, message: str):
         f.write(entry)
 
 
-def get_log_tail(project_name: str, max_lines: int = MAX_LOG_LINES_IN_CONTEXT) -> str:
+def get_log_tail(project_name: str, max_lines: Optional[int] = None) -> str:
     """Get last N lines from project log"""
+    if max_lines is None:
+        max_lines = get_config_value("max_log_lines", MAX_LOG_LINES_IN_CONTEXT)
+    
     log_file = get_project_dir(project_name) / "log.md"
     if not log_file.exists():
         return ""
@@ -220,6 +259,9 @@ def build_context_for_llm(project_name: str) -> str:
     - Top active tasks (max MAX_TASKS_IN_CONTEXT)
     - Recent log tail (max MAX_LOG_LINES_IN_CONTEXT lines)
     """
+    config = load_config()
+    max_tasks = config.get("max_tasks", MAX_TASKS_IN_CONTEXT)
+    
     context_parts = []
     
     # Project summary
@@ -236,12 +278,11 @@ def build_context_for_llm(project_name: str) -> str:
     
     # Active tasks (limited)
     tasks = load_tasks(project_name, status_filter="active")
-    # Sort by priority then by updated time
     priority_order = {"high": 0, "medium": 1, "low": 2}
     tasks.sort(key=lambda t: (priority_order.get(t.get("priority", "medium"), 1), 
                               t.get("updated", "")), 
                reverse=True)
-    tasks = tasks[:MAX_TASKS_IN_CONTEXT]
+    tasks = tasks[:max_tasks]
     
     if tasks:
         context_parts.append("## Active Tasks\n")
@@ -259,21 +300,18 @@ def build_context_for_llm(project_name: str) -> str:
     return "".join(context_parts)
 
 
-def call_ollama(prompt: str, model: str = DEFAULT_MODEL, system_prompt: Optional[str] = None) -> str:
-    """
-    Call local Ollama LLM
-    Returns the response text
-    """
+def call_ollama(prompt: str, model: Optional[str] = None, system_prompt: Optional[str] = None) -> str:
+    """Call local Ollama LLM"""
+    if model is None:
+        model = get_config_value("model", "llama3.2")
+    
     try:
-        # Build the ollama command
         cmd = ["ollama", "run", model]
         
-        # Construct full prompt
         full_prompt = prompt
         if system_prompt:
             full_prompt = f"{system_prompt}\n\n{prompt}"
         
-        # Run ollama
         result = subprocess.run(
             cmd,
             input=full_prompt,
@@ -302,5 +340,6 @@ def estimate_prompt_size_kb(text: str) -> float:
 
 def check_prompt_size(prompt: str) -> Tuple[bool, float]:
     """Check if prompt is within size limits"""
+    max_size = get_config_value("max_prompt_kb", MAX_PROMPT_SIZE_KB)
     size_kb = estimate_prompt_size_kb(prompt)
-    return size_kb <= MAX_PROMPT_SIZE_KB, size_kb
+    return size_kb <= max_size, size_kb

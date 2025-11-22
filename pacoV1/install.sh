@@ -6,7 +6,7 @@ set -e
 echo "🚀 Installing PACO - Personal AI Assistant"
 echo ""
 
-# Determine installation directory
+# Installation directory
 INSTALL_DIR="${HOME}/paco-bin"
 echo "📁 Installation directory: ${INSTALL_DIR}"
 
@@ -15,11 +15,11 @@ mkdir -p "${INSTALL_DIR}"
 
 # Copy files
 echo "📦 Copying files..."
-cp paco-* "${INSTALL_DIR}/" 2>/dev/null || true
+cp paco "${INSTALL_DIR}/"
 cp paco_lib.py "${INSTALL_DIR}/"
-chmod +x "${INSTALL_DIR}"/paco-*
+chmod +x "${INSTALL_DIR}/paco"
 
-echo "✅ Files copied"
+echo "✅ Files installed"
 
 # Check for Ollama
 echo ""
@@ -27,7 +27,6 @@ echo "🔍 Checking for Ollama..."
 if command -v ollama &> /dev/null; then
     echo "✅ Ollama is installed"
     
-    # Check if llama3.2 is available
     if ollama list | grep -q "llama3.2"; then
         echo "✅ llama3.2 model is available"
     else
@@ -42,7 +41,7 @@ else
     echo "  ollama pull llama3.2"
 fi
 
-# Check shell configuration
+# Configure PATH
 echo ""
 echo "🔧 Configuring PATH..."
 
@@ -54,9 +53,8 @@ elif [ -n "$BASH_VERSION" ]; then
 fi
 
 if [ -n "$SHELL_RC" ]; then
-    # Check if already in PATH
     if grep -q "paco-bin" "$SHELL_RC" 2>/dev/null; then
-        echo "✅ PATH already configured in $SHELL_RC"
+        echo "✅ PATH already configured"
     else
         echo "Adding PACO to PATH in $SHELL_RC"
         echo "" >> "$SHELL_RC"
@@ -64,11 +62,10 @@ if [ -n "$SHELL_RC" ]; then
         echo "export PATH=\"\${HOME}/paco-bin:\${PATH}\"" >> "$SHELL_RC"
         echo "export PYTHONPATH=\"\${HOME}/paco-bin:\${PYTHONPATH}\"" >> "$SHELL_RC"
         echo "✅ PATH configured"
-        echo "   Run: source $SHELL_RC"
     fi
 else
-    echo "⚠️  Could not detect shell config file"
-    echo "   Please manually add to your shell config:"
+    echo "⚠️  Could not detect shell config"
+    echo "   Manually add to your shell config:"
     echo "   export PATH=\"\${HOME}/paco-bin:\${PATH}\""
     echo "   export PYTHONPATH=\"\${HOME}/paco-bin:\${PYTHONPATH}\""
 fi
@@ -77,11 +74,7 @@ echo ""
 echo "✨ Installation complete!"
 echo ""
 echo "Next steps:"
-echo "  1. Source your shell config: source ~/.bashrc  (or ~/.zshrc)"
-echo "  2. Try it out: paco-add-task demo 'Get things done' --priority high"
-echo "  3. Read the docs: cat ${INSTALL_DIR}/README.md"
+echo "  1. Reload: source ~/.bashrc  (or ~/.zshrc)"
+echo "  2. Initialize: paco init"
+echo "  3. Start: paco task add demo 'First task' --priority high"
 echo ""
-echo "Quick start:"
-echo "  paco-add-task myproject 'First task' --priority high"
-echo "  paco-list projects"
-echo "  paco-next myproject"

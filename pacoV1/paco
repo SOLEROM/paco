@@ -1,0 +1,444 @@
+#!/usr/bin/env python3
+"""
+PACO - Personal AI Assistant, Contextual and Offline
+Unified CLI interface
+"""
+
+import sys
+import argparse
+from datetime import datetime
+from pathlib import Path
+
+# Import library
+import paco_lib as lib
+
+
+def cmd_init(args):
+    """Initialize PACO directories"""
+    lib.init_paco_dirs()
+    print("✓ PACO initialized at ~/paco")
+
+
+def cmd_config(args):
+    """Manage configuration"""
+    if args.list:
+        config = lib.load_config()
+        print("Current configuration:")
+        for key, value in sorted(config.items()):
+            print(f"  {key} = {value}")
+    elif args.get:
+        value = lib.get_config_value(args.get)
+        print(f"{args.get} = {value}")
+    elif args.set:
+        key, value = args.set.split("=", 1)
+        # Try to parse as JSON types
+        try:
+            if value.lower() == "true":
+                value = True
+            elif value.lower() == "false":
+                value = False
+            elif value.isdigit():
+                value = int(value)
+            elif "." in value and value.replace(".", "").isdigit():
+                value = float(value)
+        except:
+            pass
+        lib.set_config_value(key.strip(), value)
+        print(f"✓ Set {key} = {value}")
+    else:
+        print("Use --list, --get KEY, or --set KEY=VALUE")
+
+
+def cmd_projects(args):
+    """List all projects"""
+    lib.init_paco_dirs()
+    projects = lib.list_projects()
+    if not projects:
+        print("No projects yet. Create one with: paco task add <project> <title>")
+    else:
+        print(f"📁 Projects ({len(projects)}):")
+        for project in projects:
+            print(f"  • {project}")
+
+
+def cmd_task(args):
+    """Task operations"""
+    if args.task_action == "add":
+        lib.init_paco_dirs()
+        tags = [t.strip() for t in args.tags.split(",")] if args.tags else []
+        task = lib.add_task(args.project, args.title, args.priority, tags)
+        print(f"✓ Task added to '{args.project}':")
+        print(f"  ID: {task['id']}")
+        print(f"  Title: {task['title']}")
+        print(f"  Priority: {task['priority']}")
+        if tags:
+            print(f"  Tags: {', '.join(tags)}")
+    
+    elif args.task_action == "list":
+        status_filter = None if args.all else "active"
+        tasks = lib.load_tasks(args.project, status_filter=status_filter)
+        
+        if not tasks:
+            status_msg = "tasks" if args.all else "active tasks"
+            print(f"No {status_msg} in '{args.project}'")
+        else:
+            status_msg = "All Tasks" if args.all else "Active Tasks"
+            print(f"📋 {args.project} - {status_msg} ({len(tasks)}):\n")
+            
+            high = [t for t in tasks if t.get("priority") == "high"]
+            medium = [t for t in tasks if t.get("priority") == "medium"]
+            low = [t for t in tasks if t.get("priority") == "low"]
+            
+            for priority_group, priority_name in [(high, "HIGH"), (medium, "MEDIUM"), (low, "LOW")]:
+                if priority_group:
+                    print(f"  {priority_name}:")
+                    for task in priority_group:
+                        status_icon = "✓" if task.get("status") == "completed" else "○"
+                        tags_str = f" [{', '.join(task.get('tags', []))}]" if task.get('tags') else ""
+                        print(f"    {status_icon} [ID:{task['id']}] {task['title']}{tags_str}")
+                    print()
+    
+    elif args.task_action == "done":
+        all_tasks = lib.load_tasks(args.project, status_filter=None)
+        task = next((t for t in all_tasks if t["id"] == args.task_id), None)
+        
+        if not task:
+            print(f"Error: Task ID {args.task_id} not found in '{args.project}'", file=sys.stderr)
+            sys.exit(1)
+        
+        if task["status"] == "completed":
+            print(f"Task ID {args.task_id} is already completed")
+        else:
+            lib.update_task_status(args.project, args.task_id, "completed")
+            lib.append_to_log(args.project, f"✓ Completed task: {task['title']}")
+            print(f"✓ Task completed: {task['title']}")
+
+
+def cmd_log(args):
+    """Add log entry to project"""
+    lib.init_paco_dirs()
+    lib.append_to_log(args.project, args.message)
+    print(f"✓ Log entry added to '{args.project}'")
+
+
+def cmd_daily(args):
+    """Daily note operations"""
+    lib.init_paco_dirs()
+    lib.write_daily_note(args.message)
+    print("✓ Daily note added")
+
+
+def cmd_next(args):
+    """Get AI recommendation for next task"""
+    lib.init_paco_dirs()
+    print(f"🤔 Analyzing '{args.project}'...")
+    
+    context = lib.build_context_for_llm(args.project)
+    
+    within_limit, size_kb = lib.check_prompt_size(context)
+    if not within_limit:
+        print(f"⚠ Warning: Context size ({size_kb:.1f}KB) exceeds recommended limit", 
+              file=sys.stderr)
+    
+    system_prompt = """You are PACO, a personal productivity assistant. 
+Your job is to help the user choose the next best task to work on.
+Be practical, concise, and actionable.
+Format your response as:
+
+**Recommended Task:** [task title or description]
+
+**Why:** [brief reason why this is the best next task]
+
+**Three Steps to Start:**
+1. [first concrete action]
+2. [second concrete action]
+3. [third concrete action]
+"""
+    
+    user_prompt = f"""Based on the following project context, recommend 1-2 tasks I should work on next:
+
+{context}
+
+What should I work on now?"""
+    
+    print("💭 Thinking...")
+    response = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
+    
+    print("\n" + "="*60)
+    print(response)
+    print("="*60)
+
+
+def cmd_ask(args):
+    """Ask AI a question about project"""
+    lib.init_paco_dirs()
+    print(f"🤔 Consulting knowledge about '{args.project}'...")
+    
+    context = lib.build_context_for_llm(args.project)
+    
+    within_limit, size_kb = lib.check_prompt_size(context)
+    if not within_limit:
+        print(f"⚠ Warning: Context size ({size_kb:.1f}KB) exceeds recommended limit", 
+              file=sys.stderr)
+    
+    system_prompt = """You are PACO, a personal productivity assistant.
+Help the user with practical advice about their project.
+Be concise, actionable, and specific.
+Base your answer on the project context provided."""
+    
+    user_prompt = f"""Project Context:
+
+{context}
+
+Question: {args.question}"""
+    
+    print("💭 Thinking...")
+    response = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
+    
+    print("\n" + "="*60)
+    print(response)
+    print("="*60)
+
+
+def cmd_summarize(args):
+    """Summarize project or day"""
+    lib.init_paco_dirs()
+    
+    if args.summarize_target == "project":
+        project = args.project
+        project_dir = lib.get_project_dir(project)
+        log_file = project_dir / "log.md"
+        summary_file = project_dir / "summary.md"
+        
+        if not log_file.exists():
+            print(f"Error: No log file found for '{project}'", file=sys.stderr)
+            sys.exit(1)
+        
+        print(f"📝 Summarizing '{project}'...")
+        
+        log_content = log_file.read_text()
+        tasks = lib.load_tasks(project, status_filter=None)
+        
+        active_tasks = [t for t in tasks if t.get("status") == "active"]
+        completed_tasks = [t for t in tasks if t.get("status") == "completed"]
+        
+        system_prompt = """You are PACO, a personal productivity assistant.
+Generate a concise project summary (150-400 words) that includes:
+1. Project goal/purpose
+2. Recent accomplishments
+3. Current blockers or challenges
+4. Key next steps
+
+Be specific and actionable. Focus on what matters most."""
+        
+        user_prompt = f"""Based on the following project information, create a concise summary:
+
+PROJECT LOG:
+{log_content}
+
+ACTIVE TASKS ({len(active_tasks)}):
+"""
+        
+        for task in active_tasks[:10]:
+            user_prompt += f"- [{task.get('priority', 'medium')}] {task['title']}\n"
+        
+        if completed_tasks:
+            user_prompt += f"\nRECENTLY COMPLETED ({len(completed_tasks)}):\n"
+            for task in completed_tasks[-5:]:
+                user_prompt += f"- {task['title']}\n"
+        
+        user_prompt += "\nGenerate a project summary:"
+        
+        print("💭 Generating summary...")
+        summary = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        summary_content = f"""# {project} - Summary
+
+*Last updated: {timestamp}*
+
+{summary}
+"""
+        
+        summary_file.write_text(summary_content)
+        print(f"✓ Summary updated: {summary_file}")
+        
+        if args.archive:
+            print("\n📦 Archiving old log...")
+            lines = log_content.strip().split("\n")
+            
+            if len(lines) > args.keep:
+                archive_lines = lines[:-args.keep]
+                keep_lines = lines[-args.keep:]
+                
+                archive_dir = project_dir / "archive"
+                archive_dir.mkdir(exist_ok=True)
+                
+                archive_date = datetime.now().strftime("%Y-%m-%d")
+                archive_file = archive_dir / f"log-{archive_date}.md"
+                
+                archive_file.write_text("\n".join(archive_lines))
+                print(f"  ✓ Archived to: {archive_file}")
+                
+                header = f"# {project} - Log\n\n*Older entries archived*\n\n"
+                log_file.write_text(header + "\n".join(keep_lines))
+                print(f"  ✓ Kept {len(keep_lines)} recent lines in main log")
+            else:
+                print(f"  ℹ Log has only {len(lines)} lines, no archiving needed")
+        
+        print("\n✨ Done!")
+    
+    elif args.summarize_target == "day":
+        date_str = args.date if args.date else datetime.now().strftime("%Y-%m-%d")
+        daily_content = lib.get_daily_note(date_str)
+        
+        if not daily_content:
+            print(f"No daily note found for {date_str}")
+            sys.exit(1)
+        
+        print(f"📝 Summarizing daily note for {date_str}...")
+        
+        system_prompt = """You are PACO, a personal productivity assistant.
+Create a brief daily summary (5-15 sentences) that captures:
+1. What the person worked on today
+2. Key insights or learnings
+3. Important things to remember for tomorrow
+4. Any decisions made
+
+Be concise and focus on actionable information."""
+        
+        user_prompt = f"""Based on today's notes, create a brief summary:
+
+{daily_content}
+
+Generate a daily summary:"""
+        
+        print("💭 Generating summary...")
+        summary = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
+        
+        lib.DAILY_SUMMARIES_DIR.mkdir(exist_ok=True)
+        summary_file = lib.DAILY_SUMMARIES_DIR / f"{date_str}.summary.md"
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        summary_content = f"""# Daily Summary - {date_str}
+
+*Generated: {timestamp}*
+
+{summary}
+"""
+        
+        summary_file.write_text(summary_content)
+        print(f"✓ Summary saved: {summary_file}")
+        print("\n✨ Done!")
+
+
+def main():
+    """Main CLI entry point"""
+    parser = argparse.ArgumentParser(
+        prog="paco",
+        description="PACO - Personal AI Assistant, Contextual and Offline"
+    )
+    
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+    
+    # init command
+    parser_init = subparsers.add_parser("init", help="Initialize PACO")
+    parser_init.set_defaults(func=cmd_init)
+    
+    # config command
+    parser_config = subparsers.add_parser("config", help="Manage configuration")
+    parser_config.add_argument("--list", action="store_true", help="List all settings")
+    parser_config.add_argument("--get", help="Get a setting value")
+    parser_config.add_argument("--set", help="Set a setting (KEY=VALUE)")
+    parser_config.set_defaults(func=cmd_config)
+    
+    # projects command
+    parser_projects = subparsers.add_parser("projects", help="List all projects")
+    parser_projects.set_defaults(func=cmd_projects)
+    
+    # task command
+    parser_task = subparsers.add_parser("task", help="Manage tasks")
+    task_subparsers = parser_task.add_subparsers(dest="task_action", help="Task action")
+    
+    # task add
+    task_add = task_subparsers.add_parser("add", help="Add a task")
+    task_add.add_argument("project", help="Project name")
+    task_add.add_argument("title", help="Task title")
+    task_add.add_argument("--priority", choices=["high", "medium", "low"], default="medium")
+    task_add.add_argument("--tags", help="Comma-separated tags")
+    
+    # task list
+    task_list = task_subparsers.add_parser("list", help="List tasks")
+    task_list.add_argument("project", help="Project name")
+    task_list.add_argument("--all", action="store_true", help="Show all tasks")
+    
+    # task done
+    task_done = task_subparsers.add_parser("done", help="Mark task complete")
+    task_done.add_argument("project", help="Project name")
+    task_done.add_argument("task_id", type=int, help="Task ID")
+    
+    parser_task.set_defaults(func=cmd_task)
+    
+    # log command
+    parser_log = subparsers.add_parser("log", help="Add log entry")
+    parser_log.add_argument("project", help="Project name")
+    parser_log.add_argument("message", help="Log message")
+    parser_log.set_defaults(func=cmd_log)
+    
+    # daily command
+    parser_daily = subparsers.add_parser("daily", help="Add daily note")
+    parser_daily.add_argument("message", help="Daily note")
+    parser_daily.set_defaults(func=cmd_daily)
+    
+    # next command
+    parser_next = subparsers.add_parser("next", help="Get AI task recommendation")
+    parser_next.add_argument("project", help="Project name")
+    parser_next.add_argument("--model", help="Ollama model to use")
+    parser_next.set_defaults(func=cmd_next)
+    
+    # ask command
+    parser_ask = subparsers.add_parser("ask", help="Ask AI a question")
+    parser_ask.add_argument("project", help="Project name")
+    parser_ask.add_argument("question", help="Your question")
+    parser_ask.add_argument("--model", help="Ollama model to use")
+    parser_ask.set_defaults(func=cmd_ask)
+    
+    # summarize command
+    parser_summarize = subparsers.add_parser("summarize", help="Generate summaries")
+    summarize_subparsers = parser_summarize.add_subparsers(
+        dest="summarize_target", help="What to summarize"
+    )
+    
+    # summarize project
+    sum_project = summarize_subparsers.add_parser("project", help="Summarize project")
+    sum_project.add_argument("project", help="Project name")
+    sum_project.add_argument("--archive", action="store_true", help="Archive old logs")
+    sum_project.add_argument("--keep", type=int, default=40, help="Lines to keep")
+    sum_project.add_argument("--model", help="Ollama model to use")
+    
+    # summarize day
+    sum_day = summarize_subparsers.add_parser("day", help="Summarize daily notes")
+    sum_day.add_argument("--date", help="Date (YYYY-MM-DD)")
+    sum_day.add_argument("--model", help="Ollama model to use")
+    
+    parser_summarize.set_defaults(func=cmd_summarize)
+    
+    # Parse arguments
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+    
+    try:
+        args.func(args)
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
