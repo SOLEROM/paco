@@ -132,10 +132,19 @@ paco summarize blog --archive
 paco summarize myproject --keep 30
 ```
 
-The summarize command now:
-- Analyzes project logs, tasks, AND daily notes
-- Generates intelligent summary with context from daily notes
-- Optionally archives old logs
+The summarize command analyzes (configurable in `config.json`):
+- **Log entries**: By default ALL entries (`summarize_log_lines: -1`)
+- **Daily notes**: Last 7 days by default (`summarize_daily_days: 7`)
+- **Active tasks**: Up to 10 (`summarize_active_tasks: 10`)
+- **Completed tasks**: Last 5 (`summarize_completed_tasks: 5`)
+
+The AI uses this data to create an intelligent summary, then optionally archives old logs.
+
+**Pro tip**: Use `-1` in config for "no limit" on any parameter:
+```bash
+paco config --set summarize_daily_days=-1  # Analyze ALL daily notes
+paco config --set summarize_log_lines=200  # Only last 200 log lines
+```
 
 ## Configuration
 
@@ -146,14 +155,37 @@ Configuration is stored in `~/paco/config.json`. Default settings:
   "model": "llama3.2",
   "max_tasks": 20,
   "max_log_lines": 40,
-  "max_prompt_kb": 15
+  "max_prompt_kb": 15,
+  "summarize_log_lines": -1,
+  "summarize_daily_days": 7,
+  "summarize_active_tasks": 10,
+  "summarize_completed_tasks": 5
 }
 ```
+
+### AI Context Settings (for `paco next`, `paco ask`)
+- `max_tasks`: Max tasks in AI context (default: 20)
+- `max_log_lines`: Max log lines in AI context (default: 40)
+- `max_prompt_kb`: Max total prompt size in KB (default: 15)
+
+### Summarization Settings (for `paco summarize`)
+- `summarize_log_lines`: Log lines to analyze (default: -1 = all)
+- `summarize_daily_days`: Days of daily notes (default: 7)
+- `summarize_active_tasks`: Max active tasks (default: 10)
+- `summarize_completed_tasks`: Max completed tasks (default: 5)
+
+**Special value `-1` means "no limit" - use all available data.**
 
 Change settings with:
 ```bash
 paco config --set model=llama3.2
 paco config --set max_tasks=30
+
+# Summarization examples
+paco config --set summarize_log_lines=-1    # Use entire log (default)
+paco config --set summarize_log_lines=100   # Only last 100 lines
+paco config --set summarize_daily_days=-1   # Use all daily notes
+paco config --set summarize_daily_days=14   # Last 2 weeks
 ```
 
 ## Data Structure

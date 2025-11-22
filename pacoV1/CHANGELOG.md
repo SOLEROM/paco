@@ -207,6 +207,79 @@ cp ~/paco/daily/2025-01-15.md ~/paco/projects/myproject/daily/
 | AI context | No daily notes | Last 3 days of daily notes |
 | Summarize command | `paco summarize project X` | `paco summarize X` |
 | Summarize includes | Logs + tasks | Logs + tasks + **daily notes** |
+| Summarize config | Hard-coded | **Configurable in config.json** |
+
+## New: Configurable Summarization (v1.0+)
+
+You can now control exactly what data the `paco summarize` command analyzes!
+
+### Configuration Parameters
+
+In `~/paco/config.json`:
+
+```json
+{
+  "summarize_log_lines": -1,        // -1 = all, or specific number
+  "summarize_daily_days": 7,        // Last N days, or -1 for all
+  "summarize_active_tasks": 10,     // Max active tasks to analyze
+  "summarize_completed_tasks": 5    // Max completed tasks to analyze
+}
+```
+
+### Examples
+
+```bash
+# Use ALL data for comprehensive summary
+paco config --set summarize_log_lines=-1
+paco config --set summarize_daily_days=-1
+
+# Use only recent data for focused summary
+paco config --set summarize_log_lines=100
+paco config --set summarize_daily_days=3
+
+# Analyze more tasks
+paco config --set summarize_active_tasks=20
+paco config --set summarize_completed_tasks=10
+```
+
+### What `-1` Means
+
+Use `-1` for "no limit" on any parameter:
+- `summarize_log_lines: -1` → Analyze entire log file (default)
+- `summarize_daily_days: -1` → Analyze all daily notes ever written
+- `summarize_active_tasks: -1` → Include all active tasks
+- `summarize_completed_tasks: -1` → Include all completed tasks
+
+### When to Use What
+
+**Comprehensive summaries** (recommended for weekly/monthly reviews):
+```bash
+paco config --set summarize_log_lines=-1
+paco config --set summarize_daily_days=-1
+paco summarize myproject --archive
+```
+
+**Quick summaries** (for faster processing):
+```bash
+paco config --set summarize_log_lines=200
+paco config --set summarize_daily_days=7
+paco summarize myproject
+```
+
+### See What's Being Analyzed
+
+When you run `paco summarize myproject`, it shows:
+```
+📝 Summarizing 'myproject'...
+  📊 Analyzing:
+     • Full log file
+     • Last 7 days of daily notes
+     • 10 active tasks
+     • 5 completed tasks
+💭 Generating summary...
+```
+
+This transparency helps you know exactly what context the AI is using!
 
 ## Why 3 Days of Daily Notes?
 

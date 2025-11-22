@@ -215,14 +215,29 @@ def cmd_summarize(args):
     
     print(f"📝 Summarizing '{project}'...")
     
-    log_content = log_file.read_text()
-    tasks = lib.load_tasks(project, status_filter=None)
+    # Get data based on config limits
+    config = lib.load_config()
+    log_lines_limit = config.get("summarize_log_lines", -1)
+    daily_days_limit = config.get("summarize_daily_days", 7)
     
-    # Get recent daily notes
-    recent_daily = lib.get_recent_daily_notes(project, days=7)
+    log_content = lib.get_log_for_summarization(project)
+    recent_daily = lib.get_daily_for_summarization(project)
+    active_tasks, completed_tasks = lib.get_tasks_for_summarization(project)
     
-    active_tasks = [t for t in tasks if t.get("status") == "active"]
-    completed_tasks = [t for t in tasks if t.get("status") == "completed"]
+    # Show what we're analyzing
+    print(f"  📊 Analyzing:")
+    if log_lines_limit == -1:
+        print(f"     • Full log file")
+    else:
+        print(f"     • Last {log_lines_limit} log lines")
+    
+    if daily_days_limit == -1:
+        print(f"     • All daily notes")
+    else:
+        print(f"     • Last {daily_days_limit} days of daily notes")
+    
+    print(f"     • {len(active_tasks)} active tasks")
+    print(f"     • {len(completed_tasks)} completed tasks")
     
     system_prompt = """You are PACO, a personal productivity assistant.
 Generate a concise project summary (150-400 words) that includes:
@@ -242,12 +257,12 @@ PROJECT LOG:
 ACTIVE TASKS ({len(active_tasks)}):
 """
     
-    for task in active_tasks[:10]:
+    for task in active_tasks:
         user_prompt += f"- [{task.get('priority', 'medium')}] {task['title']}\n"
     
     if completed_tasks:
         user_prompt += f"\nRECENTLY COMPLETED ({len(completed_tasks)}):\n"
-        for task in completed_tasks[-5:]:
+        for task in completed_tasks:
             user_prompt += f"- {task['title']}\n"
     
     if recent_daily:
@@ -271,7 +286,8 @@ ACTIVE TASKS ({len(active_tasks)}):
     
     if args.archive:
         print("\n📦 Archiving old log...")
-        lines = log_content.strip().split("\n")
+        full_log = log_file.read_text()
+        lines = full_log.strip().split("\n")
         
         if len(lines) > args.keep:
             archive_lines = lines[:-args.keep]

@@ -26,7 +26,12 @@ DEFAULT_CONFIG = {
     "model": "llama3.2",
     "max_tasks": MAX_TASKS_IN_CONTEXT,
     "max_log_lines": MAX_LOG_LINES_IN_CONTEXT,
-    "max_prompt_kb": MAX_PROMPT_SIZE_KB
+    "max_prompt_kb": MAX_PROMPT_SIZE_KB,
+    # Summarization limits (-1 = no limit, use all data)
+    "summarize_log_lines": -1,           # -1 = entire log file
+    "summarize_daily_days": 7,           # Last N days of daily notes
+    "summarize_active_tasks": 10,        # Max active tasks to show
+    "summarize_completed_tasks": 5       # Max completed tasks to show
 }
 
 
@@ -305,6 +310,73 @@ def build_context_for_llm(project_name: str) -> str:
         context_parts.append("\n")
     
     return "".join(context_parts)
+
+
+def get_log_for_summarization(project_name: str) -> str:
+    """Get log content for summarization based on config limits"""
+    log_file = get_project_dir(project_name) / "log.md"
+    if not log_file.exists():
+        return ""
+    
+    log_content = log_file.read_text()
+    max_lines = get_config_value("summarize_log_lines", -1)
+    
+    # -1 means no limit, use entire file
+    if max_lines == -1:
+        return log_content
+    
+    # Otherwise, limit to last N lines
+    lines = log_content.strip().split("\n")
+    if len(lines) <= max_lines:
+        return log_content
+    
+    return "\n".join(lines[-max_lines:])
+
+
+def get_daily_for_summarization(project_name: str) -> str:
+    """Get daily notes for summarization based on config limits"""
+    max_days = get_config_value("summarize_daily_days", 7)
+    
+    # -1 means no limit, get all daily notes
+    if max_days == -1:
+        daily_dir = get_project_dir(project_name) / "daily"
+        if not daily_dir.exists():
+            return ""
+        
+        daily_files = sorted(daily_dir.glob("*.md"), reverse=True)
+        all_notes = []
+        for daily_file in daily_files:
+            date = daily_file.stem
+            content = daily_file.read_text().strip()
+            if content:
+                all_notes.append(f"## {date}\n{content}\n")
+        
+        return "\n".join(all_notes)
+    
+    # Otherwise, use the limited version
+    return get_recent_daily_notes(project_name, days=max_days)
+
+
+def get_tasks_for_summarization(project_name: str) -> tuple:
+    """Get tasks for summarization based on config limits
+    Returns (active_tasks, completed_tasks)
+    """
+    all_tasks = load_tasks(project_name, status_filter=None)
+    
+    active_tasks = [t for t in all_tasks if t.get("status") == "active"]
+    completed_tasks = [t for t in all_tasks if t.get("status") == "completed"]
+    
+    max_active = get_config_value("summarize_active_tasks", 10)
+    max_completed = get_config_value("summarize_completed_tasks", 5)
+    
+    # Apply limits (-1 means no limit)
+    if max_active != -1:
+        active_tasks = active_tasks[:max_active]
+    
+    if max_completed != -1:
+        completed_tasks = completed_tasks[-max_completed:]  # Last N completed
+    
+    return active_tasks, completed_tasks
 
 
 def call_ollama(prompt: str, model: Optional[str] = None, system_prompt: Optional[str] = None) -> str:
