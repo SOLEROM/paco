@@ -36,17 +36,18 @@ paco task add <project> "<title>" --priority high
 paco task list <project>
 paco task done <project> <id>
 
-# Logging
+# Logging (technical updates)
 paco log <project> "<message>"
-paco daily "<note>"
+
+# Daily notes (insights & decisions)
+paco daily <project> "<note>"
 
 # AI
 paco next <project>
 paco ask <project> "<question>"
 
-# Maintenance
-paco summarize project <project> --archive
-paco summarize day
+# Maintenance (includes daily notes)
+paco summarize <project> --archive
 
 # Config
 paco config --list
@@ -58,13 +59,15 @@ paco config --set model=llama3.2
 ```
 ~/paco/
 ├── config.json          # Settings
-├── projects/
-│   └── myproject/
-│       ├── tasks.ndjson
-│       ├── log.md
-│       └── summary.md
-└── daily/
-    └── 2025-01-15.md
+└── projects/
+    └── myproject/
+        ├── tasks.ndjson
+        ├── log.md       # Technical updates
+        ├── summary.md   # AI-generated
+        ├── daily/       # Daily insights
+        │   ├── 2025-01-15.md
+        │   └── 2025-01-16.md
+        └── archive/
 ```
 
 ## Daily Workflow
@@ -77,21 +80,23 @@ paco next myproject
 **During work:**
 ```bash
 paco log myproject "Progress update"
-paco daily "Key insight"
+paco daily myproject "Key insight or decision"
 ```
 
 **End of day:**
 ```bash
 paco task done myproject 5
-paco summarize day
+paco daily myproject "Summary of today's work"
 ```
 
 ## Tips
 
-1. **Log often** - Small updates count
-2. **Use priorities** - high/medium/low
-3. **Ask when stuck** - `paco ask`
-4. **Review weekly** - Summarize and archive
+1. **Log vs Daily**: Use `log` for technical updates, `daily` for insights and decisions
+2. **Use priorities**: high/medium/low
+3. **Daily notes feed AI**: Your insights help AI give better recommendations
+4. **Review weekly**: `paco summarize myproject --archive`
+
+Daily notes are now **part of each project** - the AI uses them for context!
 
 ## Help
 

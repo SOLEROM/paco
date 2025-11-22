@@ -14,8 +14,6 @@ from typing import List, Dict, Optional, Tuple
 # Constants
 PACO_DIR = Path.home() / "paco"
 PROJECTS_DIR = PACO_DIR / "projects"
-DAILY_DIR = PACO_DIR / "daily"
-DAILY_SUMMARIES_DIR = DAILY_DIR / "summaries"
 CONFIG_FILE = PACO_DIR / "config.json"
 
 # Context limits (guardrails)
@@ -36,8 +34,6 @@ def init_paco_dirs():
     """Initialize PACO directory structure"""
     PACO_DIR.mkdir(exist_ok=True)
     PROJECTS_DIR.mkdir(exist_ok=True)
-    DAILY_DIR.mkdir(exist_ok=True)
-    DAILY_SUMMARIES_DIR.mkdir(exist_ok=True)
     
     # Create default config if it doesn't exist
     if not CONFIG_FILE.exists():
@@ -82,6 +78,7 @@ def init_project(project_name: str):
     project_dir = get_project_dir(project_name)
     project_dir.mkdir(exist_ok=True)
     (project_dir / "archive").mkdir(exist_ok=True)
+    (project_dir / "daily").mkdir(exist_ok=True)
     
     tasks_file = project_dir / "tasks.ndjson"
     if not tasks_file.exists():
@@ -216,11 +213,13 @@ def get_project_summary(project_name: str) -> str:
     return summary_file.read_text()
 
 
-def write_daily_note(note: str):
-    """Write to today's daily note"""
-    init_paco_dirs()
+def write_daily_note(project_name: str, note: str):
+    """Write to project's daily note for today"""
+    init_project(project_name)
     today = datetime.now().strftime("%Y-%m-%d")
-    daily_file = DAILY_DIR / f"{today}.md"
+    daily_dir = get_project_dir(project_name) / "daily"
+    daily_dir.mkdir(exist_ok=True)
+    daily_file = daily_dir / f"{today}.md"
     
     timestamp = datetime.now().strftime("%H:%M")
     entry = f"**[{timestamp}]** {note}\n\n"
@@ -229,33 +228,41 @@ def write_daily_note(note: str):
         f.write(entry)
 
 
-def get_daily_note(date: Optional[str] = None) -> str:
-    """Get daily note for a specific date (default: today)"""
+def get_daily_note(project_name: str, date: Optional[str] = None) -> str:
+    """Get daily note for a project and specific date (default: today)"""
     if date is None:
         date = datetime.now().strftime("%Y-%m-%d")
     
-    daily_file = DAILY_DIR / f"{date}.md"
+    daily_file = get_project_dir(project_name) / "daily" / f"{date}.md"
     if not daily_file.exists():
         return ""
     return daily_file.read_text()
 
 
-def get_daily_summary(date: Optional[str] = None) -> str:
-    """Get daily summary for a specific date (default: today)"""
-    if date is None:
-        date = datetime.now().strftime("%Y-%m-%d")
-    
-    summary_file = DAILY_SUMMARIES_DIR / f"{date}.summary.md"
-    if not summary_file.exists():
+def get_recent_daily_notes(project_name: str, days: int = 7) -> str:
+    """Get recent daily notes for a project (last N days)"""
+    daily_dir = get_project_dir(project_name) / "daily"
+    if not daily_dir.exists():
         return ""
-    return summary_file.read_text()
+    
+    # Get all daily note files, sorted by date
+    daily_files = sorted(daily_dir.glob("*.md"), reverse=True)
+    
+    recent_notes = []
+    for daily_file in daily_files[:days]:
+        date = daily_file.stem
+        content = daily_file.read_text().strip()
+        if content:
+            recent_notes.append(f"## {date}\n{content}\n")
+    
+    return "\n".join(recent_notes)
 
 
 def build_context_for_llm(project_name: str) -> str:
     """
     Build bounded context for LLM following guardrails:
     - Project summary
-    - Today's daily summary
+    - Recent daily notes (last 3 days)
     - Top active tasks (max MAX_TASKS_IN_CONTEXT)
     - Recent log tail (max MAX_LOG_LINES_IN_CONTEXT lines)
     """
@@ -269,11 +276,11 @@ def build_context_for_llm(project_name: str) -> str:
     context_parts.append(get_project_summary(project_name))
     context_parts.append("\n")
     
-    # Daily summary
-    daily_summary = get_daily_summary()
-    if daily_summary:
-        context_parts.append("## Today's Summary\n")
-        context_parts.append(daily_summary)
+    # Recent daily notes (last 3 days)
+    recent_daily = get_recent_daily_notes(project_name, days=3)
+    if recent_daily:
+        context_parts.append("## Recent Daily Notes\n")
+        context_parts.append(recent_daily)
         context_parts.append("\n")
     
     # Active tasks (limited)

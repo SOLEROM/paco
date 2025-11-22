@@ -122,10 +122,10 @@ def cmd_log(args):
 
 
 def cmd_daily(args):
-    """Daily note operations"""
+    """Add daily note to project"""
     lib.init_paco_dirs()
-    lib.write_daily_note(args.message)
-    print("✓ Daily note added")
+    lib.write_daily_note(args.project, args.message)
+    print(f"✓ Daily note added to '{args.project}'")
 
 
 def cmd_next(args):
@@ -201,135 +201,98 @@ Question: {args.question}"""
 
 
 def cmd_summarize(args):
-    """Summarize project or day"""
+    """Summarize project"""
     lib.init_paco_dirs()
     
-    if args.summarize_target == "project":
-        project = args.project
-        project_dir = lib.get_project_dir(project)
-        log_file = project_dir / "log.md"
-        summary_file = project_dir / "summary.md"
-        
-        if not log_file.exists():
-            print(f"Error: No log file found for '{project}'", file=sys.stderr)
-            sys.exit(1)
-        
-        print(f"📝 Summarizing '{project}'...")
-        
-        log_content = log_file.read_text()
-        tasks = lib.load_tasks(project, status_filter=None)
-        
-        active_tasks = [t for t in tasks if t.get("status") == "active"]
-        completed_tasks = [t for t in tasks if t.get("status") == "completed"]
-        
-        system_prompt = """You are PACO, a personal productivity assistant.
+    project = args.project
+    project_dir = lib.get_project_dir(project)
+    log_file = project_dir / "log.md"
+    summary_file = project_dir / "summary.md"
+    
+    if not log_file.exists():
+        print(f"Error: No log file found for '{project}'", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"📝 Summarizing '{project}'...")
+    
+    log_content = log_file.read_text()
+    tasks = lib.load_tasks(project, status_filter=None)
+    
+    # Get recent daily notes
+    recent_daily = lib.get_recent_daily_notes(project, days=7)
+    
+    active_tasks = [t for t in tasks if t.get("status") == "active"]
+    completed_tasks = [t for t in tasks if t.get("status") == "completed"]
+    
+    system_prompt = """You are PACO, a personal productivity assistant.
 Generate a concise project summary (150-400 words) that includes:
 1. Project goal/purpose
 2. Recent accomplishments
 3. Current blockers or challenges
 4. Key next steps
+5. Key insights from daily notes
 
 Be specific and actionable. Focus on what matters most."""
-        
-        user_prompt = f"""Based on the following project information, create a concise summary:
+    
+    user_prompt = f"""Based on the following project information, create a concise summary:
 
 PROJECT LOG:
 {log_content}
 
 ACTIVE TASKS ({len(active_tasks)}):
 """
-        
-        for task in active_tasks[:10]:
-            user_prompt += f"- [{task.get('priority', 'medium')}] {task['title']}\n"
-        
-        if completed_tasks:
-            user_prompt += f"\nRECENTLY COMPLETED ({len(completed_tasks)}):\n"
-            for task in completed_tasks[-5:]:
-                user_prompt += f"- {task['title']}\n"
-        
-        user_prompt += "\nGenerate a project summary:"
-        
-        print("💭 Generating summary...")
-        summary = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        summary_content = f"""# {project} - Summary
+    
+    for task in active_tasks[:10]:
+        user_prompt += f"- [{task.get('priority', 'medium')}] {task['title']}\n"
+    
+    if completed_tasks:
+        user_prompt += f"\nRECENTLY COMPLETED ({len(completed_tasks)}):\n"
+        for task in completed_tasks[-5:]:
+            user_prompt += f"- {task['title']}\n"
+    
+    if recent_daily:
+        user_prompt += f"\nRECENT DAILY NOTES:\n{recent_daily}\n"
+    
+    user_prompt += "\nGenerate a project summary:"
+    
+    print("💭 Generating summary...")
+    summary = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    summary_content = f"""# {project} - Summary
 
 *Last updated: {timestamp}*
 
 {summary}
 """
-        
-        summary_file.write_text(summary_content)
-        print(f"✓ Summary updated: {summary_file}")
-        
-        if args.archive:
-            print("\n📦 Archiving old log...")
-            lines = log_content.strip().split("\n")
-            
-            if len(lines) > args.keep:
-                archive_lines = lines[:-args.keep]
-                keep_lines = lines[-args.keep:]
-                
-                archive_dir = project_dir / "archive"
-                archive_dir.mkdir(exist_ok=True)
-                
-                archive_date = datetime.now().strftime("%Y-%m-%d")
-                archive_file = archive_dir / f"log-{archive_date}.md"
-                
-                archive_file.write_text("\n".join(archive_lines))
-                print(f"  ✓ Archived to: {archive_file}")
-                
-                header = f"# {project} - Log\n\n*Older entries archived*\n\n"
-                log_file.write_text(header + "\n".join(keep_lines))
-                print(f"  ✓ Kept {len(keep_lines)} recent lines in main log")
-            else:
-                print(f"  ℹ Log has only {len(lines)} lines, no archiving needed")
-        
-        print("\n✨ Done!")
     
-    elif args.summarize_target == "day":
-        date_str = args.date if args.date else datetime.now().strftime("%Y-%m-%d")
-        daily_content = lib.get_daily_note(date_str)
+    summary_file.write_text(summary_content)
+    print(f"✓ Summary updated: {summary_file}")
+    
+    if args.archive:
+        print("\n📦 Archiving old log...")
+        lines = log_content.strip().split("\n")
         
-        if not daily_content:
-            print(f"No daily note found for {date_str}")
-            sys.exit(1)
-        
-        print(f"📝 Summarizing daily note for {date_str}...")
-        
-        system_prompt = """You are PACO, a personal productivity assistant.
-Create a brief daily summary (5-15 sentences) that captures:
-1. What the person worked on today
-2. Key insights or learnings
-3. Important things to remember for tomorrow
-4. Any decisions made
-
-Be concise and focus on actionable information."""
-        
-        user_prompt = f"""Based on today's notes, create a brief summary:
-
-{daily_content}
-
-Generate a daily summary:"""
-        
-        print("💭 Generating summary...")
-        summary = lib.call_ollama(user_prompt, model=args.model, system_prompt=system_prompt)
-        
-        lib.DAILY_SUMMARIES_DIR.mkdir(exist_ok=True)
-        summary_file = lib.DAILY_SUMMARIES_DIR / f"{date_str}.summary.md"
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        summary_content = f"""# Daily Summary - {date_str}
-
-*Generated: {timestamp}*
-
-{summary}
-"""
-        
-        summary_file.write_text(summary_content)
-        print(f"✓ Summary saved: {summary_file}")
-        print("\n✨ Done!")
+        if len(lines) > args.keep:
+            archive_lines = lines[:-args.keep]
+            keep_lines = lines[-args.keep:]
+            
+            archive_dir = project_dir / "archive"
+            archive_dir.mkdir(exist_ok=True)
+            
+            archive_date = datetime.now().strftime("%Y-%m-%d")
+            archive_file = archive_dir / f"log-{archive_date}.md"
+            
+            archive_file.write_text("\n".join(archive_lines))
+            print(f"  ✓ Archived to: {archive_file}")
+            
+            header = f"# {project} - Log\n\n*Older entries archived*\n\n"
+            log_file.write_text(header + "\n".join(keep_lines))
+            print(f"  ✓ Kept {len(keep_lines)} recent lines in main log")
+        else:
+            print(f"  ℹ Log has only {len(lines)} lines, no archiving needed")
+    
+    print("\n✨ Done!")
 
 
 def main():
@@ -386,7 +349,8 @@ def main():
     parser_log.set_defaults(func=cmd_log)
     
     # daily command
-    parser_daily = subparsers.add_parser("daily", help="Add daily note")
+    parser_daily = subparsers.add_parser("daily", help="Add daily note to project")
+    parser_daily.add_argument("project", help="Project name")
     parser_daily.add_argument("message", help="Daily note")
     parser_daily.set_defaults(func=cmd_daily)
     
@@ -404,23 +368,11 @@ def main():
     parser_ask.set_defaults(func=cmd_ask)
     
     # summarize command
-    parser_summarize = subparsers.add_parser("summarize", help="Generate summaries")
-    summarize_subparsers = parser_summarize.add_subparsers(
-        dest="summarize_target", help="What to summarize"
-    )
-    
-    # summarize project
-    sum_project = summarize_subparsers.add_parser("project", help="Summarize project")
-    sum_project.add_argument("project", help="Project name")
-    sum_project.add_argument("--archive", action="store_true", help="Archive old logs")
-    sum_project.add_argument("--keep", type=int, default=40, help="Lines to keep")
-    sum_project.add_argument("--model", help="Ollama model to use")
-    
-    # summarize day
-    sum_day = summarize_subparsers.add_parser("day", help="Summarize daily notes")
-    sum_day.add_argument("--date", help="Date (YYYY-MM-DD)")
-    sum_day.add_argument("--model", help="Ollama model to use")
-    
+    parser_summarize = subparsers.add_parser("summarize", help="Generate project summary")
+    parser_summarize.add_argument("project", help="Project name")
+    parser_summarize.add_argument("--archive", action="store_true", help="Archive old logs")
+    parser_summarize.add_argument("--keep", type=int, default=40, help="Lines to keep")
+    parser_summarize.add_argument("--model", help="Ollama model to use")
     parser_summarize.set_defaults(func=cmd_summarize)
     
     # Parse arguments

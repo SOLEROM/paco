@@ -97,12 +97,13 @@ paco task done blog 1
 # Add project log
 paco log <project> "<message>"
 
-# Add daily note
-paco daily "<message>"
+# Add daily note to project
+paco daily <project> "<message>"
 
 # Examples
 paco log blog "Finished the introduction section"
-paco daily "Had a breakthrough on the architecture"
+paco daily blog "Had a breakthrough on the architecture"
+paco daily blog "Decided to use PostgreSQL instead of MongoDB"
 ```
 
 ### AI Features
@@ -123,17 +124,18 @@ paco next myproject --model llama3.2
 ### Maintenance
 
 ```bash
-# Summarize project (compress old logs)
-paco summarize project <project> [--archive] [--keep N]
-
-# Summarize daily notes
-paco summarize day [--date YYYY-MM-DD]
+# Summarize project (includes daily notes, compresses old logs)
+paco summarize <project> [--archive] [--keep N]
 
 # Examples
-paco summarize project blog --archive
-paco summarize day
-paco summarize day --date 2025-01-15
+paco summarize blog --archive
+paco summarize myproject --keep 30
 ```
+
+The summarize command now:
+- Analyzes project logs, tasks, AND daily notes
+- Generates intelligent summary with context from daily notes
+- Optionally archives old logs
 
 ## Configuration
 
@@ -161,17 +163,16 @@ All data lives in `~/paco/`:
 ```
 ~/paco/
 ├── config.json              # Your settings
-├── projects/
-│   └── myproject/
-│       ├── tasks.ndjson     # Tasks (one JSON per line)
-│       ├── log.md           # Activity log
-│       ├── summary.md       # AI-generated summary
-│       ├── index.json       # Project metadata
-│       └── archive/         # Old archived logs
-└── daily/
-    ├── 2025-01-15.md        # Daily notes
-    └── summaries/
-        └── 2025-01-15.summary.md  # AI summaries
+└── projects/
+    └── myproject/
+        ├── tasks.ndjson     # Tasks (one JSON per line)
+        ├── log.md           # Activity log
+        ├── summary.md       # AI-generated summary
+        ├── index.json       # Project metadata
+        ├── daily/           # Daily notes for this project
+        │   ├── 2025-01-15.md
+        │   └── 2025-01-16.md
+        └── archive/         # Old archived logs
 ```
 
 All files are plain text - inspect them anytime!
@@ -182,17 +183,19 @@ PACO uses a **bounded context** approach to stay fast forever:
 
 **What the AI sees (always small):**
 - Project summary (~300 words)
-- Today's daily summary
+- Recent daily notes (last 3 days)
 - Top 20 active tasks
 - Last 40 lines of log
 
 **What the AI never sees:**
 - Full logs (could be thousands of lines)
 - Archive files
+- Old daily notes (only last 3 days)
 - Completed tasks
-- Old daily notes
 
 **Result:** Constant-time queries, infinite scalability.
+
+**Key Innovation:** Daily notes are now **project-specific**, so the AI gets rich context about each project's recent activities and insights when making recommendations.
 
 ## Typical Workflows
 
@@ -204,19 +207,20 @@ paco next myproject          # What should I work on?
 ### During Work
 ```bash
 paco log myproject "Fixed authentication bug"
-paco daily "Key insight: use JWT tokens"
+paco daily myproject "Key insight: use JWT tokens instead of sessions"
 paco task add myproject "Add rate limiting" --priority high
 ```
 
 ### End of Day
 ```bash
 paco task done myproject 5   # Mark tasks complete
-paco summarize day           # Summarize your day
+paco daily myproject "Summary: Completed auth module, next is API endpoints"
 ```
 
 ### Weekly Maintenance
 ```bash
-paco summarize project myproject --archive
+# Summarize project (AI will analyze logs AND daily notes)
+paco summarize myproject --archive
 ```
 
 ## Examples
@@ -231,24 +235,25 @@ paco task add blog "Edit & publish" --priority low
 # Check tasks
 paco task list blog
 
-# Work on it
+# Work on it - use log for technical updates
 paco log blog "Found 5 good sources"
 paco log blog "Outlined the structure"
+
+# Use daily for insights and decisions
+paco daily blog "Decided to focus on practical examples rather than theory"
+paco daily blog "Realized the introduction needs to hook readers better"
 
 # Ask for help
 paco ask blog "How should I approach the introduction?"
 
-# Get recommendation
+# Get recommendation (AI sees your daily insights!)
 paco next blog
 
 # Complete task
 paco task done blog 1
 
-# Track your day
-paco daily "Productive morning on the blog"
-
-# End of day
-paco summarize day
+# Weekly: Summarize everything (includes daily notes context)
+paco summarize blog --archive
 ```
 
 ## Command Reference
@@ -262,33 +267,40 @@ paco summarize day
 | `paco task add` | Add a task |
 | `paco task list` | List tasks |
 | `paco task done` | Complete a task |
-| `paco log` | Add log entry |
-| `paco daily` | Add daily note |
+| `paco log` | Add log entry (for technical updates) |
+| `paco daily` | Add daily note (for insights & decisions) |
 | `paco next` | Get AI recommendation |
 | `paco ask` | Ask AI a question |
-| `paco summarize project` | Compress project logs |
-| `paco summarize day` | Summarize daily notes |
+| `paco summarize` | Analyze logs + daily notes, compress |
 
 ## Tips
 
-### 1. Log Often
-Don't wait for big events. Small progress counts:
+### 1. Use Log vs Daily Appropriately
+**Log** for technical updates:
 ```bash
 paco log myproject "Fixed CSS bug"
-paco log myproject "Stuck on database query"
+paco log myproject "Deployed to staging"
 ```
 
-### 2. Use Daily Notes
-Your thinking space:
+**Daily** for insights, decisions, and reflection:
 ```bash
-paco daily "Need to refactor auth module"
-paco daily "Client approved mockups"
+paco daily myproject "Need to refactor auth module - too complex"
+paco daily myproject "Client wants feature X - should we prioritize it?"
+paco daily myproject "Learned that async approach won't work here"
 ```
 
-### 3. Ask the AI When Stuck
+### 2. Daily Notes Power the AI
+Your daily notes give the AI crucial context:
+- Past decisions and why they were made
+- Learnings and insights
+- Blockers and how you think about them
+- Direction and strategy
+
+### 3. Use Daily Notes Liberally
+Don't wait for big events:
 ```bash
-paco ask myproject "How to approach this refactoring?"
-paco ask myproject "What's blocking me?"
+paco daily myproject "Quick thought: might need caching here"
+paco daily myproject "Stuck on database query - need different approach"
 ```
 
 ### 4. Prioritize Ruthlessly
@@ -299,8 +311,10 @@ paco ask myproject "What's blocking me?"
 ### 5. Review Weekly
 ```bash
 paco projects
-paco summarize project projectA --archive
+paco summarize projectA --archive
 ```
+
+The summary will synthesize logs AND daily notes into actionable insights.
 
 ## Troubleshooting
 

@@ -24,8 +24,6 @@ def test_basic_operations():
     original_paco_dir = lib.PACO_DIR
     lib.PACO_DIR = test_dir
     lib.PROJECTS_DIR = test_dir / "projects"
-    lib.DAILY_DIR = test_dir / "daily"
-    lib.DAILY_SUMMARIES_DIR = test_dir / "daily" / "summaries"
     lib.CONFIG_FILE = test_dir / "config.json"
     
     try:
@@ -70,11 +68,16 @@ def test_basic_operations():
         print("  ✅ Passed")
         
         print("\n📅 Test 6: Daily Notes")
-        lib.write_daily_note("Test daily note")
+        lib.write_daily_note("test-project", "Test daily note")
         from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")
-        daily = lib.get_daily_note(today)
+        daily = lib.get_daily_note("test-project", today)
         assert "Test daily note" in daily, "Daily note not found"
+        
+        # Test recent daily notes
+        lib.write_daily_note("test-project", "Another note")
+        recent = lib.get_recent_daily_notes("test-project", days=7)
+        assert "Test daily note" in recent, "Recent notes not retrieved"
         print("  ✅ Passed")
         
         print("\n🎯 Test 7: Context Building")
